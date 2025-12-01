@@ -83,7 +83,7 @@ def get_dataset(dataset_name: str):
 
 def tokenize_dataset(tokenizer, example, seq_len):
     prompts = example["prompt"]
-    answers = example["answer"]
+    answers = example["answer"] + [tokenizer.eos_token]
 
     # Tokenize prompt and answer separately
     prompt_tokens = tokenizer(prompts, add_special_tokens=False, padding=False, truncation=True, max_length=seq_len, return_tensors=None)
@@ -97,8 +97,8 @@ def tokenize_dataset(tokenizer, example, seq_len):
         # Combine prompt + answer for input
         inputs = prompt_ids + answer_ids
 
-        # Generate Labels (mask prompt with -100)
-        label_ids = [-100] * len(prompt_ids) + answer_ids.copy()
+        # Generate Labels (mask prompt with tokenizer.pad_token_id)
+        label_ids = [tokenizer.pad_token_id] * len(prompt_ids) + answer_ids.copy()
 
         # Truncate
         inputs = inputs[:seq_len]
@@ -108,7 +108,7 @@ def tokenize_dataset(tokenizer, example, seq_len):
         pad_len = seq_len - len(inputs)
         if pad_len > 0:
             inputs = inputs + [tokenizer.pad_token_id] * pad_len
-            label_ids = label_ids + [-100] * pad_len
+            label_ids = label_ids + [tokenizer.pad_token_id] * pad_len
 
         input_ids.append(inputs)
         labels.append(label_ids)

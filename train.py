@@ -21,7 +21,7 @@ class ModelConfig:
     seq_len: int = field(default=512)
     attention_type: str = field(default="flash_attention_2")
     dataset: str = field(default="")
-    use_lora: bool = field(default=False)
+    use_peft: bool = field(default=False)
 
 if len(sys.argv) == 1:
     raise ValueError("Missing configuration file.")
@@ -56,7 +56,8 @@ def main():
     # Load Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_config.model_to_train)
     tokenizer.padding_side = "right"
-    tokenizer.add_special_tokens({'pad_token': '<|padding|>'})
+    pad_token = '<|padding|>'
+    tokenizer.add_special_tokens({'pad_token': pad_token})
 
     # Load Model
     model = AutoModelForCausalLM.from_pretrained(
@@ -68,21 +69,20 @@ def main():
         use_cache=False
     )
     # Load LoRA configuration
-    peft_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05,
-        bias="none",
-        target_modules="all-linear",
-        task_type="CAUSAL_LM",
-    )
-
-    # Load IA3 configuration
-    # peft_config = IA3Config(
-    #     # target_modules=["k_proj", "v_proj", "down_proj"], feedforward_modules=["down_proj"]
-    #     target_modules="all-linear",
+    # peft_config = LoraConfig(
+    #     r=16,
+    #     lora_alpha=32,
+    #     lora_dropout=0.05,
+    #     bias="none",
+    #     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     #     task_type="CAUSAL_LM",
     # )
+
+    # Load IA3 configuration
+    peft_config = IA3Config(
+        target_modules=["k_proj", "v_proj", "down_proj"], feedforward_modules=["down_proj"],
+        task_type="CAUSAL_LM",
+    )
 
     # Load PEFT model
     model = get_peft_model(model, peft_config)
@@ -93,7 +93,7 @@ def main():
 
     if training_args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
-        if model_config.use_lora:
+        if model_config.use_peft:
             model.enable_input_require_grads()
 
     # Load Dataset

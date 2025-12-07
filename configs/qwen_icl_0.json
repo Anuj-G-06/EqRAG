@@ -1,7 +1,7 @@
 {
-    "model_to_train": "Qwen/Qwen2.5-Math-7B",
-    "output_dir": "/content/models/finsight-qwen-math-7b-ni-ia3-tm",
-    "run_name": "finsight-qwen-math-7b-ni-ia3-tm",
+    "model_to_train": "ICL",
+    "output_dir": "Qwen/Qwen2.5-Math-7B",
+    "run_name": "qwen_icl_0",
     "report_to": "wandb",
     "eval_strategy": "epoch",
     "logging_steps": 1,
@@ -20,5 +20,6 @@
     "weight_decay": 0.1,
     "warmup_ratio": 0.01,
     "lr_scheduler_type": "cosine",
-    "use_peft": true
+    "use_peft": false,
+    "icl": true
 }

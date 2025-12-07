@@ -79,16 +79,17 @@ def main():
     # )
 
     # Load IA3 configuration
-    peft_config = IA3Config(
-        target_modules=["k_proj", "v_proj", "down_proj"], feedforward_modules=["down_proj"],
-        task_type="CAUSAL_LM",
-    )
+    # peft_config = IA3Config(
+    #     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    #     # target_modules=["k_proj", "v_proj", "down_proj"], feedforward_modules=["down_proj"]
+    #     task_type="CAUSAL_LM",
+    # )
 
     # Load PEFT model
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
-    # total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # print(f"Total trainable parameters: {total_trainable_params}")
+    # model = get_peft_model(model, peft_config)
+    # model.print_trainable_parameters()
+    total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total trainable parameters: {total_trainable_params}")
     model.resize_token_embeddings(len(tokenizer))
 
     if training_args.gradient_checkpointing:

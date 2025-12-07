@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Optional
 import re
 from dataset import get_dataset
-import sys
-from pathlib import Path
-from tqdm.auto import tqdm
 
 @dataclass
 class InferenceConfig:
@@ -22,14 +19,6 @@ class InferenceConfig:
     device: str = "auto"
     peft: bool = False
     repetition_penalty: float | None = None
-    batch_size: int = 1
-
-def load_json_config(path: str) -> dict:
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(f"Config file {path} not found")
-    with p.open("r") as f:
-        return json.load(f)
 
 def get_device():
     """Get the best available device"""
@@ -45,7 +34,6 @@ def load_model(config: InferenceConfig):
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.model_path)
-    tokenizer.padding_side = "left"
     
     # Load model
     # Method 1: Load model (No PEFT)
@@ -55,7 +43,7 @@ def load_model(config: InferenceConfig):
             device_map="auto",
             dtype=torch.bfloat16,
             trust_remote_code=True,
-            use_cache=True
+            use_cache=False
         )
         model.resize_token_embeddings(len(tokenizer))
     # Method 2: Load and merge PEFT weights with base model
@@ -65,7 +53,7 @@ def load_model(config: InferenceConfig):
             device_map="auto",
             dtype=torch.bfloat16,
             trust_remote_code=True,
-            use_cache=True
+            use_cache=False
         )
         base_model.resize_token_embeddings(len(tokenizer))
         model = PeftModel.from_pretrained(
@@ -74,20 +62,12 @@ def load_model(config: InferenceConfig):
             device_map="auto"
         )
         model = model.merge_and_unload()
-
-    model = torch.compile(model, mode="reduce-overhead")
+    
     model.eval()
     return model, tokenizer
 
-def generate_batch_responses(model, tokenizer, prompts: str, config: InferenceConfig) -> str:
-    inputs = tokenizer(
-        prompts, 
-        return_tensors="pt", 
-        padding=True, 
-        truncation=True,
-        max_length=2048
-    ).to(model.device)
-
+def generate_response(model, tokenizer, prompt: str, config: InferenceConfig) -> str:
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     with torch.no_grad():
         # Set up generation config
         gen_kwargs = {
@@ -111,12 +91,8 @@ def generate_batch_responses(model, tokenizer, prompts: str, config: InferenceCo
 
         outputs = model.generate(**gen_kwargs)
 
-    responses = []
-    for i, output in enumerate(outputs):
-        input_length = inputs["input_ids"][i].shape[0]
-        response = tokenizer.decode(output[input_length:], skip_special_tokens=True)
-        responses.append(response)
-    return responses
+    response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    return response
 
 def extract_action(response: str) -> Optional[str]:
     # Extract action from response
@@ -162,25 +138,25 @@ def evaluate_response(response: str, ground_truth_action: Optional[str] = None) 
 def run_inference(test_dataset, config: InferenceConfig):
     model, tokenizer = load_model(config)
     results = []
-
-    batch_size = config.batch_size
-    num_batches = (len(test_dataset) + batch_size - 1) // batch_size
     
-    for b in tqdm(range(num_batches), desc="Running Batched Inference", unit="batch"):
-        i = b * batch_size
-        j = min(i + batch_size, len(test_dataset))
-        batch = test_dataset.select(range(i, j))
+    for idx, example in enumerate(test_dataset):
+        prompt = example["prompt"]
+        ground_truth_action = example.get("action")
+        ground_truth_answer = example.get("answer")
+        response = generate_response(model, tokenizer, prompt, config)
 
-        prompts = list(batch["prompt"])
-        responses = generate_batch_responses(model, tokenizer, prompts, config)
+        # Evaluate
+        evaluation = evaluate_response(
+            response,
+            ground_truth_action
+        )
 
-        for k, response in enumerate(responses):
-            ground_truth_action = batch["action"][k]
-            evaluation = evaluate_response(response, ground_truth_action)
-            evaluation["symbol"] = batch["symbol"][k]
-            evaluation["period"] = batch["period"][k]
-            evaluation["label"] = batch["label"][k]
-            results.append(evaluation)
+        # Adding metadata
+        evaluation["symbol"] = example.get("symbol")
+        evaluation["period"] = example.get("period")
+        evaluation["label"] = example.get("label")
+        results.append(evaluation)
+        break
 
     # Calculate accuracy
     if any(r.get('action_match') is not None for r in results):
@@ -192,23 +168,18 @@ def run_inference(test_dataset, config: InferenceConfig):
     return results
 
 def main():
-    if len(sys.argv) == 1:
-        raise ValueError("Missing model configuration file.")
-    model_config = load_json_config(sys.argv[1])
-
     config = InferenceConfig(
-        base_model_path=model_config["model_to_train"],
-        model_path=model_config["output_dir"],
-        dataset_name=model_config["dataset"],
+        base_model_path="Qwen/Qwen2.5-Math-7B",
+        model_path="models/finsight-qwen-math-7b-ni-lora-tm",
+        dataset_name="FinGPT/fingpt-forecaster-dow30-202305-202405",
         temperature=0.7,
         top_k=50,
         top_p=None,
-        max_new_tokens=600,
-        peft=model_config["use_peft"],
-        # repetition_penalty=1.2,
-        batch_size=4
+        max_new_tokens=2048,
+        peft=True,
+        repetition_penalty=1.2
     )
-
+    
     # Load test dataset
     test_dataset = get_dataset(config.dataset_name)[1]
 
@@ -216,7 +187,7 @@ def main():
     results = run_inference(test_dataset, config)
 
     # Save results
-    with open(f"outputs/inference_{model_config["run_name"]}.json", "w") as f:
+    with open("outputs/inference_results.json", "w") as f:
         json.dump(results, f, indent=2)
 
 if __name__ == "__main__":

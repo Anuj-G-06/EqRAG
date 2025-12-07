@@ -1,7 +1,7 @@
 {
-    "model_to_train": "Qwen/Qwen2.5-Math-7B",
-    "output_dir": "/content/models/finsight-qwen-math-7b-ni-ia3-tm",
-    "run_name": "finsight-qwen-math-7b-ni-ia3-tm",
+    "model_to_train": "deepseek-ai/deepseek-math-7b-instruct",
+    "output_dir": "/content/models/finsight-dsm-7b-ia3-tm",
+    "run_name": "finsight-dsm-7b-ia3-tm",
     "report_to": "wandb",
     "eval_strategy": "epoch",
     "logging_steps": 1,
